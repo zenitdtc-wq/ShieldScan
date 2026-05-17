@@ -35,7 +35,7 @@ import {
 import { notifyScanComplete, notifyCriticalThreat } from '../utils/notifications';
 import { addScanToHistory, updateLastScan, type ScanHistoryEntry } from '../utils/scheduler';
 import { generateReport, type ScanReport } from '../utils/reportExport';
-import { scanFiles } from '../utils/fileScanner';
+import { scanFiles, type FileScanProgress } from '../utils/fileScanner';
 
 interface ScanEngineState {
   scanState: ScanSessionStatus;
@@ -48,6 +48,7 @@ interface ScanEngineState {
   startScan: () => void;
   resetScan: () => void;
   removeCleanedResults: (cleanedIds: string[]) => void;
+  fileScanProgress: FileScanProgress | null;
 }
 
 export function useScanEngine(): ScanEngineState {
@@ -60,6 +61,7 @@ export function useScanEngine(): ScanEngineState {
   const [results, setResults] = useState<ScanResult[]>([]);
   const [riskScore, setRiskScore] = useState<RiskScore | null>(null);
   const [report, setReport] = useState<ScanReport | null>(null);
+  const [fileScanProgress, setFileScanProgress] = useState<FileScanProgress | null>(null);
   const abortRef = useRef(false);
   const scanStartRef = useRef<number>(0);
 
@@ -839,8 +841,7 @@ export function useScanEngine(): ScanEngineState {
     return new Promise((resolve, reject) => {
       // Run the file scanner and capture the final results
       scanFiles(undefined, (progress) => {
-        // We could theoretically update the module progress here, 
-        // but the main engine simulates 0-100% loop anyway.
+        setFileScanProgress(progress);
       })
       .then(resolve)
       .catch(reject);
@@ -1158,5 +1159,6 @@ export function useScanEngine(): ScanEngineState {
     startScan,
     resetScan,
     removeCleanedResults,
+    fileScanProgress,
   };
 }

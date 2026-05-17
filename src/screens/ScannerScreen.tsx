@@ -10,6 +10,9 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../types/navigation';
 import { colors, spacing, borderRadius } from '../theme';
 import { useScanEngine } from '../hooks/useScanEngine';
 import GlassCard from '../components/common/GlassCard';
@@ -296,9 +299,10 @@ function CleanupOverlay({
 
 // ─── Main Screen ────────────────────────────────────────────────
 export default function ScannerScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const {
     scanState, currentModuleIndex, modules, overallProgress,
-    results, riskScore, report, startScan, resetScan, removeCleanedResults
+    results, riskScore, report, startScan, resetScan, removeCleanedResults, fileScanProgress
   } = useScanEngine();
 
   const [scanHistory, setScanHistory] = useState<ScanHistoryEntry[]>([]);
@@ -312,11 +316,6 @@ export default function ScannerScreen() {
   const [showCleanupPicker, setShowCleanupPicker] = useState(false);
   const [showCleanup, setShowCleanup] = useState(false);
   const [cleanupProgress, setCleanupProgress] = useState<CleanupProgress | null>(null);
-
-  // File scan state
-  const [fileScanResults, setFileScanResults] = useState<ScanResult[]>([]);
-  const [fileScanProgress, setFileScanProgress] = useState<FileScanProgress | null>(null);
-  const [isFileScanning, setIsFileScanning] = useState(false);
 
   // Recurrence state
   const [recurrentCount, setRecurrentCount] = useState(0);
@@ -471,7 +470,43 @@ export default function ScannerScreen() {
           </View>
         )}
 
-        {/* ── File scan is now part of the main progress ring ── */}
+        {/* ── File Scan Progress ───────────────────────────────── */}
+        {isRunning && fileScanProgress && (
+          <View style={styles.fileProgressSection}>
+            <GlassCard style={styles.fileProgressCard}>
+              <View style={styles.fileProgressHeader}>
+                <Ionicons name="folder-open" size={20} color={colors.accentInfo} />
+                <Text style={styles.fileProgressTitle}>Deep File Scan</Text>
+              </View>
+              
+              <View style={styles.fileProgressStats}>
+                <View style={styles.statBox}>
+                  <Text style={styles.statValue}>{fileScanProgress.filesScanned}</Text>
+                  <Text style={styles.statLabel}>Files</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={[styles.statValue, fileScanProgress.threatsFound > 0 && { color: colors.accentDanger }]}>
+                    {fileScanProgress.threatsFound}
+                  </Text>
+                  <Text style={styles.statLabel}>Threats</Text>
+                </View>
+                <View style={styles.statBox}>
+                  <Text style={styles.statValue}>{fileScanProgress.progress}%</Text>
+                  <Text style={styles.statLabel}>Done</Text>
+                </View>
+              </View>
+              
+              <Text style={styles.fileProgressPath} numberOfLines={1} ellipsizeMode="middle">
+                {fileScanProgress.currentFolder}
+              </Text>
+              {fileScanProgress.deepAnalysisActive && (
+                <Text style={styles.deepScanLabel}>
+                  <Ionicons name="medical" size={12} color={colors.accentMint} /> Binary Analysis Active
+                </Text>
+              )}
+            </GlassCard>
+          </View>
+        )}
 
         {/* ── Results Section ──────────────────────────────────── */}
         {isComplete && processedResults.length > 0 && (
@@ -524,11 +559,14 @@ export default function ScannerScreen() {
                   </View>
                 )}
               </View>
-              {fileScanResults.length > 0 && (
-                <Text style={styles.summaryFileScan}>
-                  Includes {fileScanResults.length} file scan finding{fileScanResults.length !== 1 ? 's' : ''}
-                </Text>
-              )}
+              {(() => {
+                const fileScanCount = processedResults.filter((r) => r.moduleId === 'file_scanner').length;
+                return fileScanCount > 0 ? (
+                  <Text style={styles.summaryFileScan}>
+                    Includes {fileScanCount} file scan finding{fileScanCount !== 1 ? 's' : ''}
+                  </Text>
+                ) : null;
+              })()}
             </GlassCard>
 
             {/* Filter Pills */}
@@ -732,6 +770,17 @@ export default function ScannerScreen() {
                 <Text style={styles.exportingText}>Preparing report...</Text>
               </View>
             )}
+
+            {/* Ask AI about results */}
+            {processedResults.length > 0 && (
+              <TouchableOpacity
+                style={styles.askAiBtn}
+                onPress={() => navigation.navigate('AiAgentScreen')}
+              >
+                <Ionicons name="hardware-chip" size={18} color={colors.bgDeep} />
+                <Text style={styles.askAiBtnText}>Ask AI About These Results</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -826,6 +875,17 @@ const styles = StyleSheet.create({
   fileScanCard: { padding: 14 },
   fileScanHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   fileScanText: { fontSize: 13, color: colors.textSecondary },
+  
+  fileProgressSection: { paddingHorizontal: spacing.lg, paddingBottom: 16 },
+  fileProgressCard: { padding: 18 },
+  fileProgressHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  fileProgressTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  fileProgressStats: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  statBox: { alignItems: 'center', flex: 1 },
+  statValue: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, fontFamily: 'monospace' },
+  statLabel: { fontSize: 11, color: colors.textMuted, marginTop: 4, letterSpacing: 0.5, textTransform: 'uppercase' },
+  fileProgressPath: { fontSize: 11, color: colors.textSecondary, fontFamily: 'monospace', backgroundColor: colors.bgDeep, padding: 8, borderRadius: borderRadius.sm, overflow: 'hidden' },
+  deepScanLabel: { marginTop: 10, fontSize: 11, color: colors.accentMint, fontFamily: 'monospace', textAlign: 'center' },
 
   // Results
   resultsSection: { paddingHorizontal: spacing.lg, paddingTop: 10, gap: 10 },
@@ -940,6 +1000,10 @@ const styles = StyleSheet.create({
   exportBtnText: { fontSize: 11, fontWeight: '600', color: colors.accentMint },
   exportingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 },
   exportingText: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
+
+  // Ask AI button
+  askAiBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, paddingVertical: 14, borderRadius: borderRadius.md, backgroundColor: colors.accentMint },
+  askAiBtnText: { fontSize: 14, fontWeight: '700', color: colors.bgDeep },
 
   // AI Analysis
   aiSection: { paddingHorizontal: spacing.lg, paddingTop: 20 },

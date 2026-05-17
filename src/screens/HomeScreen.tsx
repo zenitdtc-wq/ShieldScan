@@ -1,8 +1,7 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { colors, fonts, fontSizes, fontWeights, spacing, borderRadius, layout } from '../theme';
 import GlassCard from '../components/common/GlassCard';
@@ -36,7 +35,7 @@ const TRUST_STATS = [
 ];
 
 export default function HomeScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<any>();
   const cardWidth = (SCREEN_WIDTH - layout.screenPaddingH * 2 - spacing.md) / 2;
 
   return (
