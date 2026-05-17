@@ -1,0 +1,333 @@
+/**
+ * ShieldScan Report Export
+ *
+ * Generates shareable security reports in multiple formats:
+ * - Plain text summary
+ * - JSON export (machine-readable)
+ * - Formatted HTML (for sharing/printing)
+ * - Share via native share sheet
+ */
+
+import { Share, Platform } from 'react-native';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
+import type { RiskScore, ScanResult, ScanModule } from '../types/engine';
+
+export interface ScanReport {
+  id: string;
+  generatedAt: number;
+  deviceInfo: {
+    platform: string;
+    version: string;
+  };
+  scanDuration: number;
+  modules: ScanModule[];
+  results: ScanResult[];
+  riskScore: RiskScore;
+}
+
+// ─── Generate Report Object ─────────────────────────────────────
+export function generateReport(
+  modules: ScanModule[],
+  results: ScanResult[],
+  riskScore: RiskScore,
+  startTime: number
+): ScanReport {
+  return {
+    id: `report-${Date.now()}`,
+    generatedAt: Date.now(),
+    deviceInfo: {
+      platform: Platform.OS,
+      version: Platform.Version?.toString() || 'unknown',
+    },
+    scanDuration: Date.now() - startTime,
+    modules,
+    results,
+    riskScore,
+  };
+}
+
+// ─── Format as Plain Text ───────────────────────────────────────
+export function formatReportAsText(report: ScanReport): string {
+  const divider = '═'.repeat(50);
+  const thinDivider = '─'.repeat(50);
+
+  const criticalResults = report.results.filter((r) => r.severity === 'critical');
+  const highResults = report.results.filter((r) => r.severity === 'high');
+  const mediumResults = report.results.filter((r) => r.severity === 'medium');
+  const lowResults = report.results.filter((r) => r.severity === 'low');
+
+  let text = `
+${divider}
+  SHIELDSCAN SECURITY REPORT
+${divider}
+
+Generated: ${new Date(report.generatedAt).toLocaleString()}
+Platform:  ${report.deviceInfo.platform} ${report.deviceInfo.version}
+Duration:  ${Math.round(report.scanDuration / 1000)}s
+Report ID: ${report.id}
+
+${divider}
+  RISK ASSESSMENT
+${divider}
+
+  Overall Score: ${report.riskScore.overall} / 100
+  Risk Level:   ${report.riskScore.level.toUpperCase()}
+  Summary:      ${report.riskScore.summary}
+
+  Module Breakdown:
+    Permissions:  ${report.riskScore.breakdown.permissions}/100
+    Behavior:     ${report.riskScore.breakdown.behavior}/100
+    Signatures:   ${report.riskScore.breakdown.signatures}/100
+    Network:      ${report.riskScore.breakdown.network}/100
+    Integrity:    ${report.riskScore.breakdown.integrity}/100
+
+${divider}
+  MODULE STATUS
+${divider}
+`;
+
+  for (const mod of report.modules) {
+    const findings = report.results.filter((r) => r.moduleId === mod.id);
+    text += `\n  [${mod.status === 'complete' ? '✓' : '✗'}] ${mod.name}`;
+    text += `\n      ${findings.length} finding${findings.length !== 1 ? 's' : ''}`;
+    if (mod.duration) text += ` | ${Math.round(mod.duration / 1000)}s`;
+    text += '\n';
+  }
+
+  text += `\n${divider}\n  FINDINGS (${report.results.length} total)\n${divider}\n`;
+
+  const formatFindings = (findings: ScanResult[], label: string) => {
+    if (findings.length === 0) return '';
+    let section = `\n  ${label} (${findings.length})\n  ${thinDivider}\n`;
+    for (const f of findings) {
+      section += `\n  [${f.severity.toUpperCase()}] ${f.title}\n`;
+      section += `  ${f.description}\n`;
+      section += `  → ${f.recommendation}\n`;
+      if (f.evidence && f.evidence.length > 0) {
+        section += `  Evidence:\n`;
+        for (const ev of f.evidence) {
+          section += `    • ${ev}\n`;
+        }
+      }
+      if (f.packageName) {
+        section += `  Package: ${f.packageName}\n`;
+      }
+      section += '\n';
+    }
+    return section;
+  };
+
+  text += formatFindings(criticalResults, '🔴 CRITICAL');
+  text += formatFindings(highResults, '🟠 HIGH');
+  text += formatFindings(mediumResults, '🟡 MEDIUM');
+  text += formatFindings(lowResults, '🔵 LOW');
+
+  if (report.results.length === 0) {
+    text += '\n  No threats detected. Your device appears secure.\n';
+  }
+
+  text += `\n${divider}\n  RECOMMENDATIONS\n${divider}\n`;
+
+  if (criticalResults.length > 0) {
+    text += '\n  ⚠️  IMMEDIATE ACTION REQUIRED:\n';
+    text += '  - Remove identified malware immediately\n';
+    text += '  - Change all passwords from a clean device\n';
+    text += '  - Enable two-factor authentication\n';
+    text += '  - Consider factory reset if threats persist\n';
+  } else if (highResults.length > 0) {
+    text += '\n  🔶 RECOMMENDED ACTIONS:\n';
+    text += '  - Review and revoke unnecessary app permissions\n';
+    text += '  - Uninstall suspicious applications\n';
+    text += '  - Update all apps to latest versions\n';
+  } else {
+    text += '\n  ✅ MAINTENANCE:\n';
+    text += '  - Keep apps updated\n';
+    text += '  - Review permissions periodically\n';
+    text += '  - Schedule regular scans\n';
+  }
+
+  text += `\n${divider}\n`;
+  text += '  Generated by ShieldScan\n';
+  text += '  100% local analysis — no data transmitted\n';
+  text += `${divider}\n`;
+
+  return text;
+}
+
+// ─── Format as JSON ─────────────────────────────────────────────
+export function formatReportAsJSON(report: ScanReport): string {
+  return JSON.stringify(report, null, 2);
+}
+
+// ─── Format as HTML ─────────────────────────────────────────────
+export function formatReportAsHTML(report: ScanReport): string {
+  const severityColor: Record<string, string> = {
+    critical: '#FF3B5C',
+    high: '#FF8C00',
+    medium: '#FFC107',
+    low: '#00A3FF',
+    safe: '#00E676',
+  };
+
+  const riskColor = severityColor[report.riskScore.level] || '#8A9BB5';
+
+  let html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShieldScan Report</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #02050A; color: #E8ECF1; padding: 24px; }
+  .header { text-align: center; padding: 32px 0; border-bottom: 1px solid rgba(58,74,94,0.4); margin-bottom: 24px; }
+  .header h1 { font-size: 28px; color: #00F5D4; margin-bottom: 8px; }
+  .header p { color: #8A9BB5; font-size: 14px; }
+  .card { background: rgba(14,30,53,0.6); border: 1px solid rgba(58,74,94,0.4); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  .risk-score { text-align: center; padding: 24px; }
+  .risk-number { font-size: 64px; font-weight: 700; color: ${riskColor}; }
+  .risk-label { font-size: 14px; color: ${riskColor}; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; }
+  .risk-summary { color: #8A9BB5; margin-top: 12px; font-size: 14px; }
+  .breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .breakdown-item { display: flex; justify-content: space-between; font-size: 13px; }
+  .breakdown-label { color: #8A9BB5; }
+  .breakdown-value { font-family: monospace; color: #E8ECF1; }
+  .finding { border-left: 3px solid; padding: 12px 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0; background: rgba(14,30,53,0.3); }
+  .finding-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  .finding-desc { color: #8A9BB5; font-size: 13px; line-height: 1.5; }
+  .finding-rec { color: #00F5D4; font-size: 13px; margin-top: 8px; }
+  .evidence { margin-top: 8px; }
+  .evidence li { font-family: monospace; font-size: 11px; color: #8A9BB5; margin-bottom: 2px; list-style: none; }
+  .evidence li::before { content: '• '; color: #4A5F7A; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-top: 16px; border-top: 1px solid rgba(58,74,94,0.4); }
+  .footer { text-align: center; padding: 24px; color: #4A5F7A; font-size: 12px; margin-top: 24px; border-top: 1px solid rgba(58,74,94,0.4); }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🛡️ ShieldScan Report</h1>
+  <p>Generated ${new Date(report.generatedAt).toLocaleString()}</p>
+</div>
+
+<div class="card risk-score">
+  <div class="risk-number">${report.riskScore.overall}</div>
+  <div class="risk-label">${report.riskScore.level} risk</div>
+  <div class="risk-summary">${report.riskScore.summary}</div>
+  <div class="breakdown">
+    ${Object.entries(report.riskScore.breakdown)
+      .map(([k, v]) => `<div class="breakdown-item"><span class="breakdown-label">${k}</span><span class="breakdown-value">${v}/100</span></div>`)
+      .join('\n    ')}
+  </div>
+</div>
+
+<div class="section-title">Findings (${report.results.length})</div>
+`;
+
+  for (const result of report.results) {
+    const color = severityColor[result.severity] || '#8A9BB5';
+    html += `
+<div class="finding" style="border-left-color: ${color};">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div class="finding-title">${result.title}</div>
+    <span class="badge" style="background:${color}20;color:${color};">${result.severity}</span>
+  </div>
+  <div class="finding-desc">${result.description}</div>
+  <div class="finding-rec">→ ${result.recommendation}</div>
+  ${result.evidence ? `<ul class="evidence">${result.evidence.map(e => `<li>${e}</li>`).join('')}</ul>` : ''}
+  ${result.packageName ? `<div style="font-family:monospace;font-size:11px;color:#00A3FF;margin-top:4px;">${result.packageName}</div>` : ''}
+</div>`;
+  }
+
+  if (report.results.length === 0) {
+    html += `<div class="card" style="text-align:center;padding:32px;">
+      <div style="font-size:48px;margin-bottom:12px;">✅</div>
+      <div style="font-size:18px;color:#00E676;">No threats detected</div>
+      <div style="color:#8A9BB5;margin-top:8px;">Your device appears secure.</div>
+    </div>`;
+  }
+
+  html += `
+<div class="footer">
+  <p>ShieldScan Security Report • 100% Local Analysis</p>
+  <p style="margin-top:4px;">Report ID: ${report.id}</p>
+</div>
+</body>
+</html>`;
+
+  return html;
+}
+
+// ─── Save Report to File ────────────────────────────────────────
+export async function saveReportToFile(
+  report: ScanReport,
+  format: 'txt' | 'json' | 'html' = 'html'
+): Promise<string> {
+  const dir = LegacyFileSystem.documentDirectory;
+  if (!dir) throw new Error('Document directory not available');
+
+  const timestamp = new Date(report.generatedAt)
+    .toISOString()
+    .replace(/[:.]/g, '-')
+    .slice(0, 19);
+
+  const filename = `ShieldScan-Report-${timestamp}.${format}`;
+  const filePath = `${dir}${filename}`;
+
+  let content: string;
+  switch (format) {
+    case 'txt':
+      content = formatReportAsText(report);
+      break;
+    case 'json':
+      content = formatReportAsJSON(report);
+      break;
+    case 'html':
+    default:
+      content = formatReportAsHTML(report);
+      break;
+  }
+
+  await LegacyFileSystem.writeAsStringAsync(filePath, content);
+  return filePath;
+}
+
+// ─── Share Report ───────────────────────────────────────────────
+export async function shareReport(
+  report: ScanReport,
+  format: 'txt' | 'json' | 'html' = 'txt'
+): Promise<void> {
+  try {
+    if (format === 'txt') {
+      // Direct text sharing
+      const text = formatReportAsText(report);
+      await Share.share({
+        title: 'ShieldScan Security Report',
+        message: text,
+      });
+    } else {
+      // File sharing
+      const filePath = await saveReportToFile(report, format);
+      await Share.share({
+        title: 'ShieldScan Security Report',
+        url: filePath,
+      });
+    }
+  } catch (err) {
+    console.error('[ReportExport] Share failed:', err);
+    throw err;
+  }
+}
+
+// ─── Quick Summary for Sharing ──────────────────────────────────
+export function getQuickSummary(report: ScanReport): string {
+  const critCount = report.results.filter((r) => r.severity === 'critical').length;
+  const highCount = report.results.filter((r) => r.severity === 'high').length;
+
+  let emoji = '✅';
+  if (critCount > 0) emoji = '🚨';
+  else if (highCount > 0) emoji = '⚠️';
+  else if (report.results.length > 0) emoji = '🔵';
+
+  return `${emoji} ShieldScan Report: Risk Score ${report.riskScore.overall}/100 (${report.riskScore.level.toUpperCase()}) — ${report.results.length} findings, ${critCount} critical. Scanned at ${new Date(report.generatedAt).toLocaleTimeString()}.`;
+}
