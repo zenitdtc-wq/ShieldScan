@@ -8,6 +8,27 @@ ShieldScan is a **real, working Android anti-spyware/malware scanner app** built
 
 ---
 
+## ⚠️ PROTECTED FILES — DO NOT REGENERATE
+
+The following files contain complex, tested logic that must NOT be rewritten or regenerated from scratch. You may **import from** them, **call their exports**, or **add new exports** — but do not replace their contents.
+
+| File | Lines | What it does | Why protected |
+|------|-------|-------------|---------------|
+| `src/data/signatures.ts` | 1,520 | Full threat signature database (160+ packages, 120+ C2 domains, 45+ YARA rules, file magic bytes, suspicious strings, path patterns, persistence indicators, cert fingerprints) | Hand-tuned detection data — regenerating would lose coverage |
+| `src/utils/fileScanner.ts` | 1,033 | 3-layer file scanning engine (pattern matching → binary analysis → path heuristics) with entropy calculation, magic byte detection, string extraction, multi-indicator deduplication | Complex binary analysis logic with custom base64 decoder |
+| `src/i18n/en.ts` | 363 | English translations (290 keys, 17 sections) | Complete and counted — must stay in sync with nl.ts |
+| `src/i18n/nl.ts` | 363 | Dutch translations (290 keys, 17 sections) | 1:1 match with en.ts — regenerating would lose translations |
+| `src/screens/AiAgentScreen.tsx` | ~400 | Real on-device AI chat using llama.rn with ChatML format, 6-message history, knowledge-base fallback | Real LLM integration — mock replacements would break inference |
+
+### Rules for these files:
+1. **DO NOT** delete, empty, or rewrite from scratch
+2. **OK** to add new exports, extend interfaces, or append new entries to arrays
+3. **OK** to import and use their exports in other files
+4. If you need to change behavior, **extend** — don't replace
+5. When adding new i18n keys, add to BOTH en.ts and nl.ts with matching keys
+
+---
+
 ## Tech Stack
 
 - **Framework**: React Native 0.83 + Expo SDK 55 (New Architecture enabled)
